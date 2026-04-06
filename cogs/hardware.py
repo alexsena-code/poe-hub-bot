@@ -237,20 +237,24 @@ class Hardware(commands.Cog):
     async def sync(self, interaction: discord.Interaction):
         await interaction.response.defer()
         result = await hardware_api.sync_new_prices()
-        count = result.get("updated", 0)
-        items = result.get("items", [])
+        total = result.get("total_products", 0)
+        manual = result.get("manual_prices_updated", 0)
+        categories = result.get("categories", [])
 
-        if count == 0:
-            await interaction.followup.send("No new prices found to sync.")
+        if total == 0:
+            await interaction.followup.send("Sync failed or no products found.")
             return
 
         embed = discord.Embed(
-            title=f"✅ Synced {count} prices",
+            title=f"✅ Synced {total} products",
             color=0x2ECC71,
         )
         lines = []
-        for i in items[:12]:
-            lines.append(f"**{i['item']}** → {_format_price(i['new_price'])} ({i['merchant']})")
+        for c in categories:
+            err = c.get("error", "")
+            lines.append(f"**{c['category']}**: {c['products']} products{f' ⚠️ {err[:30]}' if err else ''}")
+        if manual > 0:
+            lines.append(f"\n📌 {manual} manual prices updated")
         embed.description = "\n".join(lines)
         await interaction.followup.send(embed=embed)
 
