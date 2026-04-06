@@ -173,5 +173,120 @@ class Hardware(commands.Cog):
         await interaction.response.send_message(embed=embed)
 
 
+    @app_commands.command(name="compare", description="Compare used (OLX) vs new prices")
+    @app_commands.describe(item="Filter by item name (optional)")
+    async def compare(self, interaction: discord.Interaction, item: str | None = None):
+        await interaction.response.defer()
+
+        data = await hardware_api.get_price_comparison()
+        if item:
+            data = [d for d in data if item.lower() in d["item_name"].lower()]
+
+        if not data:
+            await interaction.followup.send("No price comparison data available.")
+            return
+
+        embed = discord.Embed(title="📊 Usado vs Novo", color=0x3498DB)
+
+        for d in data[:10]:
+            olx_min = d.get("olx_min")
+            price_new = d.get("price_new")
+            savings = d.get("savings_pct")
+
+            olx_str = _format_price(olx_min) if olx_min else "—"
+            new_str = _format_price(price_new) if price_new else "—"
+            savings_str = f" | **-{savings}%**" if savings else ""
+
+            embed.add_field(
+                name=d["item_name"],
+                value=(
+                    f"🔵 OLX: {olx_str} ({d.get('olx_count', 0)} deals)\n"
+                    f"🟢 Novo: {new_str}{savings_str}"
+                ),
+                inline=True,
+            )
+
+        await interaction.followup.send(embed=embed)
+
+    @app_commands.command(name="newprice", description="Check new prices from stores")
+    @app_commands.describe(category="Category: gpu, cpu, ram, motherboard, ssd, psu")
+    async def newprice(self, interaction: discord.Interaction, category: str = "gpu"):
+        await interaction.response.defer()
+
+        products = await hardware_api.get_new_prices(category, limit=10)
+        if not products:
+            await interaction.followup.send(f"No new prices found for '{category}'")
+            return
+
+        embed = discord.Embed(
+            title=f"🛒 New Prices — {category.upper()}",
+            color=0x2ECC71,
+        )
+
+        lines = []
+        for p in products[:10]:
+            price = _format_price(p["cash_price"])
+            name = p["name"][:40]
+            merchant = p.get("merchant", "")[:15]
+            lines.append(f"**{price}** — {name}\n└ {merchant}")
+
+        embed.description = "\n\n".join(lines)
+        await interaction.followup.send(embed=embed)
+
+    @app_commands.command(name="sync", description="Sync new prices from PCBuildWizard")
+    async def sync(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        result = await hardware_api.sync_new_prices()
+        count = result.get("updated", 0)
+        items = result.get("items", [])
+
+        if count == 0:
+            await interaction.followup.send("No new prices found to sync.")
+            return
+
+        embed = discord.Embed(
+            title=f"✅ Synced {count} prices",
+            color=0x2ECC71,
+        )
+        lines = []
+        for i in items[:12]:
+            lines.append(f"**{i['item']}** → {_format_price(i['new_price'])} ({i['merchant']})")
+        embed.description = "\n".join(lines)
+        await interaction.followup.send(embed=embed)
+
+    @app_commands.command(name="status", description="System status (worker, scheduler, deals)")
+    async def status(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+
+        worker = await hardware_api.get_worker_status()
+        scheduler = await hardware_api.get_scheduler_status()
+        summary = await hardware_api.get_summary()
+
+        total_deals = sum(s.get("count", 0) for s in summary)
+
+        embed = discord.Embed(title="⚙️ System Status", color=0x95A5A6)
+        embed.add_field(
+            name="Worker",
+            value="🟢 Online" if worker.get("online") else "🔴 Offline",
+            inline=True,
+        )
+        embed.add_field(
+            name="Scheduler",
+            value="🟢 Running" if scheduler.get("running") else "🔴 Stopped",
+            inline=True,
+        )
+        embed.add_field(
+            name="Deals",
+            value=f"{total_deals} active",
+            inline=True,
+        )
+
+        if scheduler.get("jobs"):
+            jobs_str = "\n".join(f"• {j['id']} ({j['interval']})" for j in scheduler["jobs"])
+            embed.add_field(name="Scheduled Jobs", value=jobs_str, inline=False)
+
+        await interaction.followup.send(embed=embed)
+
+
 async def setup(bot: commands.Bot):
     await bot.add_cog(Hardware(bot))
