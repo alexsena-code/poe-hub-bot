@@ -1,0 +1,15 @@
+[Unit]
+Description=PoE Hub Discord Bot
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/poe-hub-bot
+ExecStart=/opt/poe-hub-bot/.venv/bin/python bot.py
+Restart=always
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
